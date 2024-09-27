@@ -63,14 +63,17 @@ async def update_command(interaction, name: Optional[str] = None, attempts: Opti
     update_message = interaction.user.name + " updated remaining attempts for " + name + "."
     current_attempt = getCurrentAttemps(name.lower())
     
-    if attempts == -1:
+    if attempts < 0:
         attempts = current_attempt
-        if attempts == -1:
+        if attempts < 0:
             update_message += "\nCommand failed. User not found. Please register first."
             await interaction.response.send_message(update_message)
             return
         else:
             attempts = attempts - 1
+    elif attempts > MAX_ATTEMPTS:
+        attempts = MAX_ATTEMPTS
+        update_message += "\nExceeding max attempts. Setting attempt to " + str(MAX_ATTEMPTS) + "."
 
     if attempts < 0:
         attempts = 0
@@ -95,8 +98,9 @@ async def show_command(interaction):
 @tree.command(name="add", description="Add a guild member to the database")#,     guild=discord.Object(id=GUILD_ID))
 async def add_command(interaction, name: str):
     resp_message = interaction.user.name + " added " + name + " to the battle ranking"
-    add_member(name.lower())
-    logFile.write("\n" + resp_message)        
+    if (add_member(name.lower()) == False):
+        resp_message = name + " is already in the database"
+    logFile.write("\n" + resp_message)
     await interaction.response.send_message(resp_message)
 
 # Command to remove a guild member from the database
@@ -111,8 +115,9 @@ async def remove_command(interaction, name: str):
 # Task event that run at eventTime - Reset all attempts
 @tasks.loop(time=eventTime)
 async def reset_once_a_day():
-    writeDataToDatabase() # daily writing data to the database
+    await writeDataToDatabase() # daily writing data to the database
     
+    global logFile
     logFile.write("\n\nData before reset:")
     writeData(logFile)    
     logFile.close() # Close old log file and make a new log file    
@@ -126,7 +131,7 @@ async def reset_once_a_day():
     channel = client.get_channel(CHANNEL_ID)
     await channel.send(message)
 
-@tasks.loop(minutes=60)
+@tasks.loop(minutes=5)
 async def write_every_hour():
     await writeDataToDatabase() # daily writing data to the database
     
@@ -143,7 +148,7 @@ async def on_ready():
     readDataFromDatabase()
     
     # Print all the keys from the database
-    logFile.write("\nCurrent keys at start: \n")
+    logFile.write("\n" + str(datetime.now()) + ": Current keys at start: \n")
     writeData(logFile)
     
     logFile.write("\nReset time (UTC) is: " + str(eventTime))
@@ -175,9 +180,9 @@ def getCurrentAttemps(name):
 def composeRemainingMessage():
     resp_message = "Remaining attempts for today:\n"
     # Print all the keys from the database
-    keys = db.keys()
+    keys = db.keys()   
     
-    for key in keys:
+    for key in sorted(keys):
         resp_message += key + ": " + str(db[key]) + "\n"
     return resp_message
 
@@ -191,11 +196,17 @@ def reset_attempts():
 def update_attempts(name, attempts):
   if name in db.keys():
     db[name] = attempts
+    return True
+  else:
+    return False
 
 # Add a member to the database
 def add_member(name):
     if name not in db:
-        db[name] = MAX_ATTEMPTS        
+        db[name] = MAX_ATTEMPTS
+        return True
+    else:
+        return False
 
 # Remove a member from the database
 def delete_member(name):
@@ -222,6 +233,6 @@ def readDataFromDatabase():
 async def writeDataToDatabase():
     f = open("data.txt", "w")
     writeData(f)
-    f.close()
+    f.close()   
     
 client.run(token)
