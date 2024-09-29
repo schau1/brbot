@@ -2,6 +2,7 @@ import discord
 import os
 import sys
 #import asyncio
+import time
 from datetime import datetime, timezone
 #from replit import db
 from discord import app_commands
@@ -58,9 +59,9 @@ if not token:
 @app_commands.describe(attempts="The optional argument. If not provided, reduce the attempt by 1")
 async def update_command(interaction, name: Optional[str] = None, attempts: Optional[int] = -1):
     if name is None:
-        name = interaction.user.name
+        name = interaction.user.global_name
 
-    update_message = interaction.user.name + " updated remaining attempts for " + name + "."
+    update_message = interaction.user.global_name + " updated remaining attempts for " + name + "."
     current_attempt = getCurrentAttemps(name.lower())
     
     if attempts < 0:
@@ -80,8 +81,8 @@ async def update_command(interaction, name: Optional[str] = None, attempts: Opti
 
     update_message += "\nPrevious: " + str(current_attempt) + "\nNew: " + str(attempts) + "\n"
     
-    if (update_attempts(name, attempts) == False):
-        update_message = "\nERROR: " + name + " not found"
+    if (update_attempts(name.lower(), attempts) == False):
+        update_message = "\nERROR: '" + name + "' not found"
         
     logFile.write("\n" + update_message)
     
@@ -97,7 +98,7 @@ async def show_command(interaction):
 # Command to add a guild member to the database
 @tree.command(name="add", description="Add a guild member to the database")#,     guild=discord.Object(id=GUILD_ID))
 async def add_command(interaction, name: str):
-    resp_message = interaction.user.name + " added " + name + " to the battle ranking"
+    resp_message = interaction.user.global_name + " added " + name + " to the battle ranking"
     if (add_member(name.lower()) == False):
         resp_message = name + " is already in the database"
     logFile.write("\n" + resp_message)
@@ -107,7 +108,7 @@ async def add_command(interaction, name: str):
 @tree.command(name="remove", description="Remove a guild member from the database")#,
 #     guild=discord.Object(id=GUILD_ID))
 async def remove_command(interaction, name: str):
-    resp_message = interaction.user.name + " removed " + name + " from the battle ranking"
+    resp_message = interaction.user.global_name + " removed " + name + " from the battle ranking"
     delete_member(name.lower())
     logFile.write("\n" + resp_message)        
     await interaction.response.send_message(resp_message)
@@ -122,10 +123,10 @@ async def reset_once_a_day():
     writeData(logFile)    
     logFile.close() # Close old log file and make a new log file    
     
-    logFile = open("log_" + str(datetime.now().strftime('%Y-%m-%d')) + ".txt", "a")  
+    logFile = open("log_" + str(datetime.now().strftime('%Y-%m-%d')) + ".txt", "a", encoding="utf-8")  
         
     reset_attempts()    
-    message = "\nAll remaining attempts were reset at (UTC) " + str(datetime.now())
+    message = "\nAll remaining attempts were reset at (PST) " + str(datetime.now())
     print(message)
     logFile.write("\n" + message)
     channel = client.get_channel(CHANNEL_ID)
@@ -142,7 +143,7 @@ async def on_ready():
     await tree.sync()
 
     global logFile
-    logFile = open("log_" + str(datetime.now().strftime('%Y-%m-%d')) + ".txt", "a")
+    logFile = open("log_" + str(datetime.now().strftime('%Y-%m-%d')) + ".txt", "a", encoding="utf-8")
     
     # Read keys from the database
     readDataFromDatabase()
@@ -167,7 +168,7 @@ async def on_ready():
 async def on_message(message):
     if message.author == client.user:
         return
-        
+    
 # Get current attempt for a member
 def getCurrentAttemps(name):
     if name in db.keys():
@@ -231,7 +232,7 @@ def readDataFromDatabase():
     f.close()
     
 async def writeDataToDatabase():
-    f = open("data.txt", "w")
+    f = open("data.txt", "w", encoding="utf-8")
     writeData(f)
     f.close()   
     
