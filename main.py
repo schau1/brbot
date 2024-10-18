@@ -12,7 +12,7 @@ from discord import app_commands
 from typing import Optional
 from discord.ext import tasks
 from dotenv import load_dotenv
-#from prettytable import PrettyTable
+from prettytable import PrettyTable
 
 # Loads the .env file that resides on the same level as the script.
 load_dotenv()
@@ -89,7 +89,7 @@ async def update_command(interaction, name: Optional[str] = None, attempts: Opti
     await interaction.response.send_message(update_message)
     
 # Command to update the remaining attempts of a user
-@tree.command(name="stage", description="Set score for stages")
+@tree.command(name="score", description="Set score for stages")
 @app_commands.describe(name="The optional argument. If not provided, update member with your discord name")
 @app_commands.describe(stage1="The optional argument - number only. If not provided, change nothing")
 @app_commands.describe(stage2="The optional argument - number only. If not provided, change nothing")
@@ -150,6 +150,25 @@ async def stage_command(interaction, name: Optional[str] = None, stage1: Optiona
     logFile.write("\n" + update_message)
     
     await interaction.response.send_message(update_message)
+
+# Command to update the remaining attempts of a user
+@tree.command(name="reset", description="Reset score for stages")
+@app_commands.describe(name="Reset stage scores for a member")
+async def stage_command(interaction, name: str):        
+    error = False
+
+    update_message = interaction.user.global_name + " reset scores for '" + name + "'."
+
+    if error == False:
+        if update_stages(name.lower(), 0, 0, 0, 0, 0) == False:
+            update_message = "\nERROR: '" + name + "' not found"
+        else:
+            update_message += composeScoreMessage(name.lower())
+            
+    global logFile        
+    logFile.write("\n" + update_message)
+    
+    await interaction.response.send_message(update_message)
     
 # Command to show everyone from the database
 @tree.command(name="show", description="Show the number of attempts left")#,             guild=discord.Object(id=GUILD_ID))
@@ -165,6 +184,22 @@ async def show_command(interaction, all: Optional[bool] = False):
             i += 1
         elif msg != "":
             await channel.send(msg)   
+            
+# Command to show everyone from the database
+@tree.command(name="shows", description="Show members with the score matching filter")#,             guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(min_score="The optional argument. Display members with score >= this score. If not provided, assume 0")
+@app_commands.describe(max_score="The optional argument. Display members with score <= this score, assume 100")
+@app_commands.describe(stage="Display the stage of members with attempts left")
+@app_commands.choices(stage=[
+    app_commands.Choice(name='stage 1', value=1),
+    app_commands.Choice(name='stage 2', value=2),
+    app_commands.Choice(name='stage 3', value=3),
+    app_commands.Choice(name='stage 4', value=4),
+    app_commands.Choice(name='stage 5', value=5),    
+])
+async def show_stage_command(interaction, stage: app_commands.Choice[int], min_score: Optional[int] = 0, max_score: Optional[int] = 100):
+    resp_message = composeStageMessage(stage.value, 0, min_score, max_score)
+    await interaction.response.send_message(resp_message)
 
 # Command to add a guild member to the database
 @tree.command(name="add", description="Add a guild member to the database")#,     guild=discord.Object(id=GUILD_ID))
@@ -206,10 +241,12 @@ async def showa_command(interaction):
     resp_message = " Stage assignment: "
 # discord message format EX:  https://discord.com/channels/1273976720382234675/1288668100631330828/1289912810998071387
 #                             https://discordapp.com/channels/guild_id/channel_id/message_id
-    global assignmentLink
+    global assignmentLink       
+  
     if (assignmentLink == None):
         resp_message = "No stage assignment found."
     else:
+#        print("link " + assignmentLink)
         link = assignmentLink.split('/')
         server_id = int(link[4])
         channel_id = int(link[5])
@@ -287,6 +324,43 @@ def getCurrentAttemps(name):
         return db[name]["attempts"]
     else:
         return -1
+
+# Composes stage message, sorted
+def composeStageMessage(stage, attempt, minS, maxS):
+    resp_message = "Members with matching filter:"    
+   
+    # Print all the keys from the database
+    keys = db.keys()   
+
+    t = PrettyTable(['name', '#', 'stg', '%'])
+    
+    for key in sorted(keys):
+        if stage == 1:
+            value = db[key]['stage 1']
+        elif stage == 2:
+            value = db[key]['stage 2']
+        elif stage == 3:
+            value = db[key]['stage 3']
+        elif stage == 4:
+            value = db[key]['stage 4']
+        elif stage == 5:
+            value = db[key]['stage 5']
+        else:
+            break
+        
+        if db[key]["attempts"] > attempt and value >= minS and value <= maxS:
+#            resp_message += "\n"
+#            newstr = key + ": " + str(db[key]["attempts"])
+#            resp_message += newstr
+#            newstr = "\tStg " + str(stage) + ": " + str(value) + "%"
+#            resp_message += newstr
+            t.add_row([key, db[key]["attempts"], str(stage), value]) 
+
+    resp_message += f"```{t}```"
+    return resp_message
+
+
+
 
 # Composes the message to be sent to the channel with all the remaining attempts
 # of the key-value pairs in the database
@@ -412,7 +486,9 @@ def delete_member(name):
     if name not in db:
        logFile.write("\n" + name + " deleted successfully.")
 
-def writeData(f):      
+def writeData(f): 
+    global assignmentLink    
+    f.write(assignmentLink)    
     keys = db.keys()
     
     for key in keys:
@@ -422,7 +498,11 @@ def writeData(f):
 def readDataFromDatabase():
     with open('data.txt') as f:
         lines = f.readlines()
-        for line in lines:            
+        global assignmentLink
+        assignmentLink = lines[0]
+#        print("assignment from: " + assignmentLink)
+#        print("Data:\n")
+        for line in lines[1:]:            
             if line: # if line is not empty
                 data = line.split(',')
 #                print(line)                    
