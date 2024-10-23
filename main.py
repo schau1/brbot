@@ -38,6 +38,7 @@ allowed_guilds = [TEST_DISCORD_GUILD, GUILD_ID_PRISON]
 allowed_channel = [TEST_CHANNEL_ID, GUILD_BATTLE_CHANNEL_ID]
 
 db = {}
+timedb = {}
 
 #reset at 2 a.m. 0 min 0 sec UTC - which is 7 p.m. PDT
 dt = datetime(2024, 8, 28, 2, 0, 0, tzinfo=timezone.utc)
@@ -86,6 +87,13 @@ async def update_command(interaction, name: Optional[str] = None, attempts: Opti
         
     logFile.write("\n" + update_message)
     
+    await interaction.response.send_message(update_message)
+    
+# Command to update the remaining attempts of a user
+@tree.command(name="readt", description="Read a new timeslot file")#,
+async def readtimeslot_command(interaction):
+    update_message = interaction.user.global_name + " updated timeslot from file."
+    readTimeFromFile()    
     await interaction.response.send_message(update_message)
     
 # Command to update the remaining attempts of a user
@@ -187,9 +195,10 @@ async def show_command(interaction, all: Optional[bool] = False):
             
 # Command to show everyone from the database
 @tree.command(name="shows", description="Show members with the score matching filter")#,             guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(min_score="The optional argument. Display members with score >= this score. If not provided, assume 0")
-@app_commands.describe(max_score="The optional argument. Display members with score <= this score, assume 100")
-@app_commands.describe(stage="Display the stage of members with attempts left")
+@app_commands.describe(min_score="Optional. Display members with score >= this score. If not provided, assume 0")
+@app_commands.describe(max_score="Optional. Display members with score <= this score. If not provided, assume 100")
+@app_commands.describe(avail="Optional. True if they're pingable at the time of usage. If not provided, will display all")
+@app_commands.describe(stage="Display the stage of members that still have any attempt left")
 @app_commands.choices(stage=[
     app_commands.Choice(name='stage 1', value=1),
     app_commands.Choice(name='stage 2', value=2),
@@ -197,8 +206,8 @@ async def show_command(interaction, all: Optional[bool] = False):
     app_commands.Choice(name='stage 4', value=4),
     app_commands.Choice(name='stage 5', value=5),    
 ])
-async def show_stage_command(interaction, stage: app_commands.Choice[int], min_score: Optional[int] = 0, max_score: Optional[int] = 100):
-    resp_message = composeStageMessage(stage.value, 0, min_score, max_score)
+async def show_stage_command(interaction, stage: app_commands.Choice[int], min_score: Optional[int] = 0, max_score: Optional[int] = 100, avail: Optional[bool] = False):
+    resp_message = composeStageMessage(stage.value, 0, min_score, max_score, avail)
     await interaction.response.send_message(resp_message)
 
 # Command to add a guild member to the database
@@ -297,6 +306,9 @@ async def on_ready():
     # Read keys from the database
     readDataFromDatabase()
     
+    # Read time from file
+    readTimeFromFile()
+    
     # Print all the keys from the database
     logFile.write("\n" + str(datetime.now()) + ": Current keys at start: \n")
     writeData(logFile)
@@ -326,13 +338,17 @@ def getCurrentAttemps(name):
         return -1
 
 # Composes stage message, sorted
-def composeStageMessage(stage, attempt, minS, maxS):
-    resp_message = "Members with matching filter:"    
+def composeStageMessage(stage, attempt, minS, maxS, avail):
+    hour = datetime.now(timezone.utc).hour # get current hour    
+    resp_message = "Current time (UTC) is: " + str(datetime.now(timezone.utc)) + ". \nMembers with matching filter - min: " + str(minS) + " max: " + str(maxS)
    
+    if avail:
+        resp_message += " and are available at this time"
+        
     # Print all the keys from the database
     keys = db.keys()   
-
-    t = PrettyTable(['name', '#', 'stg', '%'])
+    
+    t = PrettyTable(['name', '#', 'stg', '%', 'Free'])    
     
     for key in sorted(keys):
         if stage == 1:
@@ -346,21 +362,24 @@ def composeStageMessage(stage, attempt, minS, maxS):
         elif stage == 5:
             value = db[key]['stage 5']
         else:
-            break
+            break           
         
-        if db[key]["attempts"] > attempt and value >= minS and value <= maxS:
+        freetime = getTimeAvailable(key, hour)
+        display = True
+        if avail == True:
+            if freetime != 'Y' and freetime != 'M':
+                display = False  
+        
+        if db[key]["attempts"] > attempt and value >= minS and value <= maxS and display:
 #            resp_message += "\n"
 #            newstr = key + ": " + str(db[key]["attempts"])
 #            resp_message += newstr
 #            newstr = "\tStg " + str(stage) + ": " + str(value) + "%"
 #            resp_message += newstr
-            t.add_row([key, db[key]["attempts"], str(stage), value]) 
+            t.add_row([key, db[key]["attempts"], str(stage), value, freetime])
 
     resp_message += f"```{t}```"
     return resp_message
-
-
-
 
 # Composes the message to be sent to the channel with all the remaining attempts
 # of the key-value pairs in the database
@@ -488,7 +507,7 @@ def delete_member(name):
 
 def writeData(f): 
     global assignmentLink    
-    f.write(assignmentLink)    
+    f.write(assignmentLink + "\n")
     keys = db.keys()
     
     for key in keys:
@@ -502,7 +521,7 @@ def readDataFromDatabase():
         assignmentLink = lines[0]
 #        print("assignment from: " + assignmentLink)
 #        print("Data:\n")
-        for line in lines[1:]:            
+        for line in lines[2:]:            
             if line: # if line is not empty
                 data = line.split(',')
 #                print(line)                    
@@ -521,6 +540,126 @@ def readDataFromDatabase():
 async def writeDataToDatabase():
     f = open("data.txt", "w", encoding="utf-8")
     writeData(f)
-    f.close()   
+    f.close()  
+    
+def getTimeAvailable(key, hour):
+    if key not in timedb:
+        print(key + "is not in timedb")
+        return ''
+    
+    match hour:
+        case 0:
+#            if timedb[key]["0"] == 'Y' or timedb[key]["0"] == 'M':
+#                return True
+             return timedb[key]["0"]          
+        case 1:
+#            if timedb[key]["1"] == 'Y' or timedb[key]["1"] == 'M':
+             return timedb[key]["1"]          
+        case 2:
+#            if timedb[key]["2"] == 'Y' or timedb[key]["2"] == 'M':
+             return timedb[key]["2"]          
+        case 3:
+#            if timedb[key]["3"] == 'Y' or timedb[key]["3"] == 'M':
+             return timedb[key]["3"]          
+        case 4:
+ #           if timedb[key]["4"] == 'Y' or timedb[key]["4"] == 'M':
+             return timedb[key]["4"]          
+        case 5:
+#            if timedb[key]["5"] == 'Y' or timedb[key]["5"] == 'M':
+             return timedb[key]["5"]          
+        case 6:
+#            if timedb[key]["6"] == 'Y' or timedb[key]["6"] == 'M':
+             return timedb[key]["6"]          
+        case 7:
+#            if timedb[key]["7"] == 'Y' or timedb[key]["7"] == 'M':
+             return timedb[key]["7"]          
+        case 8:
+#            if timedb[key]["8"] == 'Y' or timedb[key]["8"] == 'M':
+             return timedb[key]["8"]                       
+        case 9:
+#            if timedb[key]["9"] == 'Y' or timedb[key]["9"] == 'M':
+             return timedb[key]["9"]                       
+        case 10:
+ #           if timedb[key]["10"] == 'Y' or timedb[key]["10"] == 'M':
+             return timedb[key]["10"]                       
+        case 11:
+ #           if timedb[key]["11"] == 'Y' or timedb[key]["11"] == 'M':
+             return timedb[key]["11"]           
+        case 12:
+#            if timedb[key]["12"] == 'Y' or timedb[key]["12"] == 'M':
+             return timedb[key]["12"]                       
+        case 13:
+#            if timedb[key]["13"] == 'Y' or timedb[key]["13"] == 'M':
+             return timedb[key]["13"]                       
+        case 14:
+#            if timedb[key]["14"] == 'Y' or timedb[key]["14"] == 'M':
+             return timedb[key]["14"]                       
+        case 15:
+#            if timedb[key]["15"] == 'Y' or timedb[key]["15"] == 'M':
+             return timedb[key]["15"]                       
+        case 16:
+#            if timedb[key]["16"] == 'Y' or timedb[key]["16"] == 'M':
+             return timedb[key]["16"]                       
+        case 17:
+#            if timedb[key]["17"] == 'Y' or timedb[key]["17"] == 'M':
+             return timedb[key]["17"]                       
+        case 18:
+#            if timedb[key]["18"] == 'Y' or timedb[key]["18"] == 'M':
+             return timedb[key]["18"]                    
+        case 19:
+#            if timedb[key]["19"] == 'Y' or timedb[key]["19"] == 'M':
+             return timedb[key]["19"]                       
+        case 20:
+#            if timedb[key]["20"] == 'Y' or timedb[key]["20"] == 'M':
+             return timedb[key]["20"]                       
+        case 21:
+ #           if timedb[key]["21"] == 'Y' or timedb[key]["21"] == 'M':
+             return timedb[key]["21"]                       
+        case 22:
+#            if timedb[key]["22"] == 'Y' or timedb[key]["22"] == 'M':
+             return timedb[key]["22"]                       
+        case 23:                
+#            if timedb[key]["23"] == 'Y' or timedb[key]["23"] == 'M':
+             return timedb[key]["23"]               
+        case _:  # Default case - shouldn't hit this...
+            return ''
+
+def readTimeFromFile():
+    with open('time.csv') as f:
+        lines = f.readlines()
+        for line in lines[1:]:          
+            if line: # if line is not empty
+                data = line.split(',')
+                timedb[data[0]]={}                
+                timedb[data[0]]["zone"] = data[1]
+                timedb[data[0]]["0"] = data[2]
+                timedb[data[0]]["1"] = data[3]
+                timedb[data[0]]["2"] = data[4]
+                timedb[data[0]]["3"] = data[5]
+                timedb[data[0]]["4"] = data[6]
+                timedb[data[0]]["5"] = data[7]
+                timedb[data[0]]["6"] = data[8]
+                timedb[data[0]]["7"] = data[9]
+                timedb[data[0]]["8"] = data[10]
+                timedb[data[0]]["9"] = data[11]
+                timedb[data[0]]["10"] = data[12]
+                timedb[data[0]]["11"] = data[13]
+                timedb[data[0]]["12"] = data[14]
+                timedb[data[0]]["13"] = data[15]
+                timedb[data[0]]["14"] = data[16]
+                timedb[data[0]]["15"] = data[17]
+                timedb[data[0]]["16"] = data[18]
+                timedb[data[0]]["17"] = data[19]
+                timedb[data[0]]["18"] = data[20]
+                timedb[data[0]]["19"] = data[21]
+                timedb[data[0]]["20"] = data[22]
+                timedb[data[0]]["21"] = data[23]
+                timedb[data[0]]["22"] = data[24]
+                timedb[data[0]]["23"] = data[25]
+    f.close()        
     
 client.run(token)
+
+        
+
+                
