@@ -224,6 +224,7 @@ async def add_command(interaction, name: str):
 @tree.command(name="remove", description="Remove a guild member from the database")#,
 #     guild=discord.Object(id=GUILD_ID))
 async def remove_command(interaction, name: str):
+    global logFile    
     resp_message = interaction.user.global_name + " removed " + name + " from the battle ranking"
     delete_member(name.lower())
     if resp_message != None:    
@@ -234,14 +235,18 @@ async def remove_command(interaction, name: str):
 # Command to assign stage assignment and save to the database
 @tree.command(name="assign", description="Set stage assignment for the guild battle")#,
 #     guild=discord.Object(id=GUILD_ID))
-async def assign_command(interaction, link: str):
-    global assignmentLink
-    assignmentLink = link
-    resp_message = interaction.user.global_name + " set " + assignmentLink + " as stage assignment"
-    # write to the database - need to redesign the database a bit
-    if resp_message != None:    
-        logFile.write("\n" + resp_message)        
-    await interaction.response.send_message(resp_message)
+async def assign_command(interaction, link: str):   
+    if "discord.gg/" not in link and "discord.com/" not in link:
+        await interaction.response.send_message("\nWrong format. Not a discord link.")
+    else:
+        global assignmentLink
+        global logFile
+        assignmentLink = link
+        resp_message = interaction.user.global_name + " set " + assignmentLink + " as stage assignment"
+        # write to the database - need to redesign the database a bit
+        if resp_message != None:    
+            logFile.write("\n" + resp_message)        
+        await interaction.response.send_message(resp_message)
     
 # Command to show stage assignment
 @tree.command(name="showa", description="Show stage assignment for the guild battle")#,
@@ -343,12 +348,14 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
     resp_message = "Current time (UTC) is: " + str(datetime.now(timezone.utc)) + ". \nMembers with matching filter - min: " + str(minS) + " max: " + str(maxS)
    
     if avail:
-        resp_message += " and are available at this time"
+        resp_message += " and are available at this time"   
         
+    resp_message += "\n#: Remaining attempt. %: Score. Curr: Current status. Next: Status at next hour."
+            
     # Print all the keys from the database
     keys = db.keys()   
     
-    t = PrettyTable(['name', '#', 'stg', '%', 'Free'])    
+    t = PrettyTable(['Name', '#', 'Stg', '%', 'Curr', 'Next'])    
     
     for key in sorted(keys):
         if stage == 1:
@@ -376,7 +383,7 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
 #            resp_message += newstr
 #            newstr = "\tStg " + str(stage) + ": " + str(value) + "%"
 #            resp_message += newstr
-            t.add_row([key, db[key]["attempts"], str(stage), value, freetime])
+            t.add_row([key, db[key]["attempts"], str(stage), value, freetime, getTimeAvailable(key, hour+1)])
 
     resp_message += f"```{t}```"
     return resp_message
@@ -546,6 +553,9 @@ def getTimeAvailable(key, hour):
     if key not in timedb:
         print(key + "is not in timedb")
         return ''
+    
+    if hour < 0 or hour > 23:
+        hour = 0  
     
     match hour:
         case 0:
