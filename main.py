@@ -344,14 +344,11 @@ def getCurrentAttemps(name):
 
 # Composes stage message, sorted
 def composeStageMessage(stage, attempt, minS, maxS, avail):
-    hour = datetime.now(timezone.utc).hour # get current hour    
-    resp_message = "Current time (UTC) is: " + str(datetime.now(timezone.utc)) + ". \nMembers with matching filter - min: " + str(minS) + " max: " + str(maxS)
-   
-    if avail:
-        resp_message += " and are available at this time"   
-        
-    resp_message += "\n#: Remaining attempt. %: Score. Curr: Current status. Next: Status at next hour."
-            
+    now = datetime.now(timezone.utc)
+    hour = now.hour # get current hour
+    resp_message = "Current time (UTC): " + str(now.hour) + ":" + str(now.minute) +":" + str(now.second) + ". \nMin: " + str(minS) + " max: " + str(maxS)
+#    count = 0
+                
     # Print all the keys from the database
     keys = db.keys()   
     
@@ -372,10 +369,11 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
             break           
         
         freetime = getTimeAvailable(key, hour)
+        nextFreeTime = getTimeAvailable(key, hour+1)
         display = True
         if avail == True:
             if freetime != 'Y' and freetime != 'M':
-                display = False  
+                display = False
         
         if db[key]["attempts"] > attempt and value >= minS and value <= maxS and display:
 #            resp_message += "\n"
@@ -383,9 +381,17 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
 #            resp_message += newstr
 #            newstr = "\tStg " + str(stage) + ": " + str(value) + "%"
 #            resp_message += newstr
-            t.add_row([key, db[key]["attempts"], str(stage), value, freetime, getTimeAvailable(key, hour+1)])
+            t.add_row([key, db[key]["attempts"], str(stage), value, freetime, nextFreeTime])#'''getTimeAvailable(key, hour+1)'''0])
+#            count += 1
+#            if count > 15:
+#                resp_message += "\nExceeding discord length limit. Filter to see more members."
+#                break
 
     resp_message += f"```{t}```"
+    
+#    print("\nLength: ")
+#    print(len(resp_message))
+    
     return resp_message
 
 # Composes the message to be sent to the channel with all the remaining attempts
@@ -665,7 +671,7 @@ def readTimeFromFile():
                 timedb[data[0]]["20"] = data[22]
                 timedb[data[0]]["21"] = data[23]
                 timedb[data[0]]["22"] = data[24]
-                timedb[data[0]]["23"] = data[25]
+                timedb[data[0]]["23"] = data[25].strip()
     f.close()        
     
 client.run(token)
