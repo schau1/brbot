@@ -160,9 +160,17 @@ async def stage_command(interaction, name: Optional[str] = None, stage1: Optiona
     await interaction.response.send_message(update_message)
 
 # Command to update the remaining attempts of a user
+@tree.command(name="reseta", description="Reset score for all members")
+async def reseta_command(interaction):
+    update_message = interaction.user.global_name + " reset scores for everyone."
+    reset_all_member_stages();
+   
+    await interaction.response.send_message(update_message)
+
+# Command to update the remaining attempts of a user
 @tree.command(name="reset", description="Reset score for stages")
 @app_commands.describe(name="Reset stage scores for a member")
-async def stage_command(interaction, name: str):        
+async def reset_command(interaction, name: str):        
     error = False
 
     update_message = interaction.user.global_name + " reset scores for '" + name + "'."
@@ -232,10 +240,50 @@ async def remove_command(interaction, name: str):
     await interaction.response.send_message(resp_message)
 
 
+# Command to show everyone from the database
+@tree.command(name="showt", description="Show timeslots for the next 5 hours")
+async def showt_command(interaction):
+    resp_message = composeTimeMessage()
+    await interaction.response.send_message(resp_message)
+
 # Command to assign stage assignment and save to the database
-@tree.command(name="assign", description="Set stage assignment for the guild battle")#,
+@tree.command(name="astage", description="Set stage assignment for the guild battle")
+@app_commands.describe(name="Assign a stage to a member. If not provided, use your discord name.")
+@app_commands.describe(stage="Assign a stage to a member. If not provided, user is not assigned to any stage.")
+@app_commands.choices(stage=[
+    app_commands.Choice(name='none', value=0),
+    app_commands.Choice(name='stage 1', value=1),
+    app_commands.Choice(name='stage 2', value=2),
+    app_commands.Choice(name='stage 3', value=3),
+    app_commands.Choice(name='stage 4', value=4),
+    app_commands.Choice(name='stage 5', value=5),    
+])
+async def astage_command(interaction, name: Optional[str] = None, stage: app_commands.Choice[int] = 0):
+    if name is None:
+        name = interaction.user.global_name
+  
+    if stage.value > 5 or stage.value < 0:
+        update_message = "\nCommand failed. Invalid stage."
+        await interaction.response.send_message(update_message)
+        return
+
+    if stage.value != 0:
+        update_message = interaction.user.global_name + " assigned stage " + str(stage.value) + " to '" + name + "'."
+    else:
+        update_message = interaction.user.global_name + " removed stage assignment for '" + name + "'."
+    
+    if (update_assign(name.lower(), stage.value) == False):
+        update_message = "\nERROR: '" + name + "' not found"
+        
+    logFile.write("\n" + update_message)
+    
+    await interaction.response.send_message(update_message)
+
+
+# Command to assign stage assignment and save to the database
+@tree.command(name="alink", description="Set stage assignment for the guild battle")#,
 #     guild=discord.Object(id=GUILD_ID))
-async def assign_command(interaction, link: str):   
+async def alink_command(interaction, link: str):   
     if "discord.gg/" not in link and "discord.com/" not in link:
         await interaction.response.send_message("\nWrong format. Not a discord link.")
     else:
@@ -342,6 +390,36 @@ def getCurrentAttemps(name):
     else:
         return -1
 
+# Composes time message
+def composeTimeMessage():
+    now = datetime.now(timezone.utc)
+    hour = now.hour # get current hour
+    resp_message = "Current time (UTC): " + str(now.hour) + ":" + str(now.minute) +":" + str(now.second) + "."
+               
+    # Print all the keys from the database
+    keys = db.keys() 
+  
+    t = PrettyTable(['Name', 'Now', 'Now+1', 'Now+2', 'Now+3', 'Now+4'])
+   
+    for key in sorted(keys):
+        currHour = hour
+        freeTime = []
+
+        for i in range(5):
+            if currHour < 0 or currHour > 23:
+                currHour = 0
+            freeTime.append(getTimeAvailable(key, currHour))
+            currHour += 1
+        
+        if db[key]["attempts"]:
+            t.add_row([key, freeTime[0], freeTime[1], freeTime[2], freeTime[3], freeTime[4]])
+
+        freeTime.clear()
+
+    resp_message += f"```{t}```"    
+    
+    return resp_message
+
 # Composes stage message, sorted
 def composeStageMessage(stage, attempt, minS, maxS, avail):
     now = datetime.now(timezone.utc)
@@ -352,21 +430,47 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
     # Print all the keys from the database
     keys = db.keys()   
     
-    t = PrettyTable(['Name', '#', 'Stg', '%', 'Curr', 'Next'])    
-    
-    for key in sorted(keys):
+    t = PrettyTable(['Name', '#', 'Stg', '%', 'Now', 'Next'])
+
+    if stage == 1:
+        sorted_dict = dict(sorted(db.items(), key=lambda item: item[1]['stage 1'], reverse=True))
+    elif stage == 2:
+        sorted_dict = dict(sorted(db.items(), key=lambda item: item[1]['stage 2'], reverse=True))
+    elif stage == 3:
+        sorted_dict = dict(sorted(db.items(), key=lambda item: item[1]['stage 3'], reverse=True))
+    elif stage == 4:
+        sorted_dict = dict(sorted(db.items(), key=lambda item: item[1]['stage 4'], reverse=True))
+    elif stage == 5:
+        sorted_dict = dict(sorted(db.items(), key=lambda item: item[1]['stage 5'], reverse=True))
+
+    for key in sorted_dict:
         if stage == 1:
             value = db[key]['stage 1']
+            valueS = str(value)
+            if db[key]['assign'] == 1:
+                valueS = valueS + "*"
         elif stage == 2:
             value = db[key]['stage 2']
+            valueS = str(value)            
+            if db[key]['assign'] == 2:
+                valueS = valueS + "*"
         elif stage == 3:
             value = db[key]['stage 3']
+            valueS = str(value)            
+            if db[key]['assign'] == 3:
+                valueS = valueS + "*"
         elif stage == 4:
             value = db[key]['stage 4']
+            valueS = str(value)            
+            if db[key]['assign'] == 4:
+                valueS = valueS + "*"
         elif stage == 5:
             value = db[key]['stage 5']
+            valueS = str(value)            
+            if db[key]['assign'] == 5:
+                valueS = valueS + "*"
         else:
-            break           
+            break
         
         freetime = getTimeAvailable(key, hour)
         nextFreeTime = getTimeAvailable(key, hour+1)
@@ -381,7 +485,7 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
 #            resp_message += newstr
 #            newstr = "\tStg " + str(stage) + ": " + str(value) + "%"
 #            resp_message += newstr
-            t.add_row([key, db[key]["attempts"], str(stage), value, freetime, nextFreeTime])#'''getTimeAvailable(key, hour+1)'''0])
+            t.add_row([key, db[key]["attempts"], str(stage), valueS, freetime, nextFreeTime])#'''getTimeAvailable(key, hour+1)'''0])
 #            count += 1
 #            if count > 15:
 #                resp_message += "\nExceeding discord length limit. Filter to see more members."
@@ -466,6 +570,17 @@ def update_attempts(name, attempts):
   else:
     return False
 
+# Reset scores for all members
+def reset_all_member_stages():
+    keys = db.keys()
+    for name in keys:
+        db[name]["stage 1"] = 0
+        db[name]["stage 2"] = 0        
+        db[name]["stage 3"] = 0
+        db[name]["stage 4"] = 0
+        db[name]["stage 5"] = 0
+        db[name]["assign"] = 0
+
 # Update the stages of a member
 def update_stages(name, stage1, stage2, stage3, stage4, stage5):
   if name in db.keys():
@@ -497,6 +612,13 @@ def update_stages(name, stage1, stage2, stage3, stage4, stage5):
   else:
     return False  
 
+def update_assign(name, value):
+  if name in db.keys():
+      db[name]["assign"] = value
+      return True
+  else:
+      return False
+
 # Add a member to the database
 def add_member(name):
     if name not in db:
@@ -507,6 +629,7 @@ def add_member(name):
         db[name]["stage 3"] = 0
         db[name]["stage 4"] = 0
         db[name]["stage 5"] = 0        
+        db[name]["assign"] = 0
         return True
     else:
         return False
@@ -524,7 +647,7 @@ def writeData(f):
     keys = db.keys()
     
     for key in keys:
-        data = key + "," + str(db[key]["attempts"]) + "," + str(db[key]["stage 1"]) + "," + str(db[key]["stage 2"]) + "," + str(db[key]["stage 3"]) + "," + str(db[key]["stage 4"]) + "," + str(db[key]["stage 5"]) + "\n"
+        data = key + "," + str(db[key]["attempts"]) + "," + str(db[key]["stage 1"]) + "," + str(db[key]["stage 2"]) + "," + str(db[key]["stage 3"]) + "," + str(db[key]["stage 4"]) + "," + str(db[key]["stage 5"]) + "," + str(db[key]["assign"]) + "\n"
         f.write(data)
 
 def readDataFromDatabase():
@@ -547,6 +670,7 @@ def readDataFromDatabase():
                 db[data[0]]["stage 3"] = float(data[4])
                 db[data[0]]["stage 4"] = float(data[5])
                 db[data[0]]["stage 5"] = float(data[6])
+                db[data[0]]["assign"] = int(data[7])
 #        print(db)
     f.close()
     
