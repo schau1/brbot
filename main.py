@@ -337,11 +337,11 @@ async def reset_once_a_day():
     logFile = open("log_" + str(datetime.now().strftime('%Y-%m-%d')) + ".txt", "a", encoding="utf-8")  
         
     reset_attempts()    
-    message = "\nAll remaining attempts were reset at (PST) " + str(datetime.now())
+    message = "\nAll remaining attempts were reset at (UTC) " + str(datetime.now())
     print(message)
     logFile.write("\n" + message)
     channel = client.get_channel(CHANNEL_ID)
-    await channel.send(message)
+#    await channel.send(message)
 
 @tasks.loop(minutes=5)
 async def write_every_hour():
@@ -382,6 +382,8 @@ async def on_ready():
 async def on_message(message):
     if message.author == client.user:
         return
+
+    return
     
 # Get current attempt for a member
 def getCurrentAttemps(name):
@@ -429,8 +431,11 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
                 
     # Print all the keys from the database
     keys = db.keys()   
+    total_attempt = 0
+    total_stg_attempt = 0
     
-    t = PrettyTable(['Name', '#', 'Stg', '%', 'Now', 'Next'])
+#    t = PrettyTable(['Name', '#', 'Stg', '%', 'Now', 'Next'])
+    t = PrettyTable(['Name', '#', 'Stg', '%', 'Timezone'])
 
     if stage == 1:
         sorted_dict = dict(sorted(db.items(), key=lambda item: item[1]['stage 1'], reverse=True))
@@ -449,28 +454,35 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
             valueS = str(value)
             if db[key]['assign'] == 1:
                 valueS = valueS + "*"
+                total_stg_attempt += db[key]["attempts"]
         elif stage == 2:
             value = db[key]['stage 2']
             valueS = str(value)            
             if db[key]['assign'] == 2:
                 valueS = valueS + "*"
+                total_stg_attempt += db[key]["attempts"]
         elif stage == 3:
             value = db[key]['stage 3']
             valueS = str(value)            
             if db[key]['assign'] == 3:
                 valueS = valueS + "*"
+                total_stg_attempt += db[key]["attempts"]
         elif stage == 4:
             value = db[key]['stage 4']
             valueS = str(value)            
             if db[key]['assign'] == 4:
                 valueS = valueS + "*"
+                total_stg_attempt += db[key]["attempts"]
         elif stage == 5:
             value = db[key]['stage 5']
             valueS = str(value)            
             if db[key]['assign'] == 5:
                 valueS = valueS + "*"
+                total_stg_attempt += db[key]["attempts"]
         else:
             break
+
+        total_attempt += db[key]["attempts"]
         
         freetime = getTimeAvailable(key, hour)
         nextFreeTime = getTimeAvailable(key, hour+1)
@@ -485,11 +497,15 @@ def composeStageMessage(stage, attempt, minS, maxS, avail):
 #            resp_message += newstr
 #            newstr = "\tStg " + str(stage) + ": " + str(value) + "%"
 #            resp_message += newstr
-            t.add_row([key, db[key]["attempts"], str(stage), valueS, freetime, nextFreeTime])#'''getTimeAvailable(key, hour+1)'''0])
+            t.add_row([key, db[key]["attempts"], str(stage), valueS, getTimeZone(key)])
+#            t.add_row([key, db[key]["attempts"], str(stage), valueS, freetime, nextFreeTime])#'''getTimeAvailable(key, hour+1)'''0])
 #            count += 1
 #            if count > 15:
 #                resp_message += "\nExceeding discord length limit. Filter to see more members."
 #                break
+
+    resp_message += "\nTotal attempts for this stg: " + str(total_stg_attempt)
+    resp_message += "\nTotal attempts for all stg: " + str(total_attempt)
 
     resp_message += f"```{t}```"
     
@@ -678,6 +694,13 @@ async def writeDataToDatabase():
     f = open("data.txt", "w", encoding="utf-8")
     writeData(f)
     f.close()  
+
+def getTimeZone(key):
+    if key not in timedb:
+        print(key + "is not in timedb")
+        return ''
+
+    return timedb[key]["zone"] 
     
 def getTimeAvailable(key, hour):
     if key not in timedb:
